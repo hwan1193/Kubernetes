@@ -1,0 +1,82 @@
+# [사람설명] sock-shop이라는 네임스페이스를 만든다. 이 네임스페이스는 이 앱의 리소스를 분리, 관리하는 공간임
+apiVersion: v1                 # [컴퓨터] 리소스 타입의 버전, v1은 가장 기본적인 API 그룹
+kind: Namespace                # [컴퓨터] 만들 리소스 종류, 여기선 네임스페이스(리소스의 논리적 구획)
+metadata:                      # [컴퓨터] 메타데이터 정보(이름 등)
+  name: sock-shop              # [사람설명] 네임스페이스 이름을 'sock-shop'으로 지정
+
+---
+# [사람설명] carts라는 서비스를 제공하는 애플리케이션 배포(Deployment) 정의
+apiVersion: apps/v1            # [컴퓨터] Deployment를 쓸 때 쓰는 API 버전
+kind: Deployment               # [컴퓨터] 여러 Pod를 관리하는 리소스 유형
+metadata:
+  name: carts                  # [사람설명] 이 Deployment의 이름. pod 등에서 이 이름을 참조
+  labels:
+    name: carts                # [컴퓨터] pod, service 등에서 이 label로 서로 연결됨
+  namespace: sock-shop         # [사람설명] 위에서 만든 sock-shop 네임스페이스에 배포됨
+spec:
+  replicas: 1                  # [사람설명] pod를 몇 개 띄울지, 개발환경에서는 1개면 충분
+  selector:
+    matchLabels:
+      name: carts              # [컴퓨터] pod 선택시 name: carts 라벨이 붙은 것만 관리함
+  template:                    # [컴퓨터] 실제로 띄울 pod의 템플릿 내용
+    metadata:
+      labels:
+        name: carts            # [컴퓨터] pod에 붙는 label, 위의 selector와 맞춰야함
+    spec:
+      containers:
+      - name: carts            # [사람설명] 컨테이너 이름. pod 안에 여러 컨테이너 넣을 수 있음
+        image: weaveworksdemos/carts:0.4.8 # [사람설명] 사용할 Docker 이미지 (도커허브에서 가져옴)
+        env:
+         - name: JAVA_OPTS
+           value: -Xms64m -Xmx128m -XX:+UseG1GC -Djava.security.egd=file:/dev/urandom -Dspring.zipkin.enabled=false
+        resources:             # [사람설명] 자원(CPU, 메모리) 제한 및 요청 (오버로드 방지)
+          limits:
+            cpu: 300m
+            memory: 500Mi
+          requests:
+            cpu: 100m
+            memory: 200Mi
+        ports:
+        - containerPort: 80    # [사람설명] 컨테이너가 사용할 내부 포트(서비스로 노출됨)
+        securityContext:       # [사람설명] 보안 설정(루트권한 금지 등)
+          runAsNonRoot: true
+          runAsUser: 10001
+          capabilities:
+            drop:
+              - all            # [컴퓨터] 불필요한 Linux Capability 다 제거
+            add:
+              - NET_BIND_SERVICE # [컴퓨터] 1024 이하 포트 바인딩 허용
+          readOnlyRootFilesystem: true # [사람설명] 컨테이너 파일시스템을 읽기전용으로(보안강화)
+        volumeMounts:
+        - mountPath: /tmp      # [사람설명] 컨테이너 내 /tmp에 빈 디렉토리 볼륨 마운트
+          name: tmp-volume
+      volumes:                 # [컴퓨터] pod에 마운트할 볼륨 정의
+        - name: tmp-volume
+          emptyDir:
+            medium: Memory     # [사람설명] 메모리 기반 빈 볼륨(컨테이너 죽으면 같이 사라짐)
+      nodeSelector:
+        beta.kubernetes.io/os: linux # [컴퓨터] 이 pod는 리눅스 노드에서만 실행
+
+---
+# [사람설명] carts 서비스에 접근할 수 있는 Kubernetes 서비스(내부, 외부 트래픽 연결) 정의
+apiVersion: v1
+kind: Service
+metadata:
+  name: carts                  # [사람설명] 서비스 이름, DNS 이름 등에서 사용
+  annotations:
+        prometheus.io/scrape: 'true' # [사람설명] Prometheus가 이 서비스 모니터링 하라는 의미
+  labels:
+    name: carts
+  namespace: sock-shop         # [사람설명] 같은 네임스페이스에 배포됨
+spec:
+  ports:
+  - port: 80                   # [사람설명] 서비스가 열어줄 포트(클러스터 외부/내부가 이 포트로 접근)
+    targetPort: 80             # [컴퓨터] 실제 pod가 노출하는 컨테이너포트
+  selector:
+    name: carts                # [컴퓨터] name: carts인 pod에게 트래픽 전달
+
+---
+# [사람설명] carts-db(MongoDB) 배포, 나머지 부분도 위와 동일한 방식으로 작성됨
+# (중복 설명은 생략)
+
+# ... 이후 내용도 위와 동일한 컨벤션으로 각각 배포(Deployment), 서비스(Service), 보안 컨텍스트, 볼륨, 리소스 할당 등 해설이 반복됨.
